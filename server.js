@@ -26,8 +26,10 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 // Recettes à partir de critères (personnes, prix, difficulté, style, demande).
 app.post('/api/recipes', async (req, res) => {
   try {
-    const brief = buildUserBrief(req.body || {});
-    const data = await generateRecipes({ brief });
+    const b = req.body || {};
+    const brief = buildUserBrief(b);
+    const query = b.demande || b.style || '';
+    const data = await generateRecipes({ brief, query });
     res.json(data);
   } catch (err) {
     handleError(res, err);
@@ -42,7 +44,7 @@ app.post('/api/fridge', async (req, res) => {
 
     const { mediaType, data: imageBase64 } = parseDataUrl(image);
     const brief = `${FRIDGE_BRIEF}\n\n${buildUserBrief(criteres)}`;
-    const data = await generateRecipes({ brief, imageBase64, mediaType });
+    const data = await generateRecipes({ brief, query: criteres.demande || '', imageBase64, mediaType });
     res.json(data);
   } catch (err) {
     handleError(res, err);

@@ -1,12 +1,13 @@
-// Orchestration Google Gemini — MODE ÉCONOME (1 seul appel) + Gemini 3.
-//
-// Un unique appel fait tout : vision (photo du frigo), recherche web (sites de
-// qualité type Michelin) et génération des 3 recettes en JSON.
-// Optimisations tokens/appels : 1 seul appel, prompts compacts, sortie plafonnée.
-// Reprise automatique sur erreurs transitoires (503/429).
+// Orchestration des recettes — RÈGLE :
+//   1) MCP d'abord (recipe-mcp, gratuit, sans quota).
+//   2) Si assez de recettes (>= 3) -> on les garde.
+//   3) Sinon -> Gemini 3 (recherche web + génération).
+//   4) Si Gemini bloque (quota) -> repli MCP best-effort (même aléatoire).
+// Le mode photo du frigo (vision) passe directement par Gemini.
 
 import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT } from './prompts.js';
+import { recipesFromMcp } from './mcpRecipes.js';
 
 const MODEL = process.env.CHEF_MODEL || 'gemini-3-flash-preview';
 const MAX_OUTPUT_TOKENS = 8192;
@@ -19,8 +20,41 @@ EXACTEMENT 3 recettes ; style de cuisine pour chacune ; "ingredientsDetectes" re
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Appel Gemini avec reprise sur 503 (indispo) et 429 (quota momentané).
-async function generate(parts) {
+function isQuotaError(err) {
+  return err?.status === 429 || /RESOURCE_EXHAUSTED|quota|exceeded/i.test(err?.message || '');
+}
+
+// --- Orchestrateur (point d'entrée principal) ---
+export async function generateRecipes({ brief, query, imageBase64, mediaType }, _log = console) {
+  // 1) MCP d'abord (sauf en mode photo : le MCP ne lit pas les images).
+  if (!imageBase64) {
+    try {
+      const mcp = await recipesFromMcp(query, { allowRandom: false });
+      if (mcp.enough) return mcp;
+    } catch { /* on tentera Gemini */ }
+  }
+
+  // 2) Pas assez (ou photo du frigo) -> Gemini.
+  try {
+    return await generateWithGemini({ brief, imageBase64, mediaType });
+  } catch (err) {
+    // 3) Gemini bloqué (quota) -> repli MCP best-effort (aléatoire si besoin).
+    if (isQuotaError(err) && !imageBase64) {
+      const mcp = await recipesFromMcp(query, { allowRandom: true });
+      if (mcp.recettes.length) return mcp;
+    }
+    throw err;
+  }
+}
+
+// --- Appel Gemini 3 (1 seul appel) avec reprise sur 503/429 ---
+async function generateWithGemini({ brief, imageBase64, mediaType }) {
+  const parts = [];
+  if (imageBase64) {
+    parts.push({ inlineData: { mimeType: mediaType || 'image/jpeg', data: imageBase64 } });
+  }
+  parts.push({ text: `${brief}\n\n${JSON_INSTRUCTION}` });
+
   const req = {
     model: MODEL,
     contents: [{ role: 'user', parts }],
@@ -30,30 +64,18 @@ async function generate(parts) {
       maxOutputTokens: MAX_OUTPUT_TOKENS
     }
   };
-  let lastErr;
+
+  let res, lastErr;
   for (let i = 0; i < 3; i++) {
-    try {
-      return await ai.models.generateContent(req);
-    } catch (err) {
+    try { res = await ai.models.generateContent(req); break; }
+    catch (err) {
       lastErr = err;
-      if ((err.status === 503 || err.status === 429) && i < 2) {
-        await sleep(1200 * (i + 1));
-        continue;
-      }
+      if ((err.status === 503 || err.status === 429) && i < 2) { await sleep(1200 * (i + 1)); continue; }
       throw err;
     }
   }
-  throw lastErr;
-}
+  if (!res) throw lastErr;
 
-export async function generateRecipes({ brief, imageBase64, mediaType }, _log = console) {
-  const parts = [];
-  if (imageBase64) {
-    parts.push({ inlineData: { mimeType: mediaType || 'image/jpeg', data: imageBase64 } });
-  }
-  parts.push({ text: `${brief}\n\n${JSON_INSTRUCTION}` });
-
-  const res = await generate(parts);
   const result = safeParse(res.text);
   if (Array.isArray(result.recettes)) result.recettes = result.recettes.slice(0, 3);
   if (!Array.isArray(result.ingredientsDetectes)) result.ingredientsDetectes = [];

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(__dirname, '..', 'mcp.config.json');
 
-const clients = [];
+const entries = []; // { name, client }
 
 export async function initMcp(log = console) {
   if (!existsSync(CONFIG_PATH)) {
@@ -58,21 +58,26 @@ export async function initMcp(log = console) {
       });
       const client = new Client({ name: 'le-chef-jason', version: '1.0.0' }, { capabilities: {} });
       await client.connect(transport);
-      clients.push(client);
+      entries.push({ name: srv.name, client });
       log.info(`[MCP] Serveur « ${srv.name} » connecté.`);
     } catch (err) {
       log.warn(`[MCP] Échec du serveur « ${srv.name} » : ${err.message} — ignoré.`);
     }
   }
 
-  return { serverCount: clients.length };
+  return { serverCount: entries.length };
 }
 
-// Clients MCP connectés, à passer à mcpToTool(...) côté Gemini.
+// Tous les clients MCP connectés.
 export function getMcpClients() {
-  return clients;
+  return entries.map((e) => e.client);
+}
+
+// Client MCP d'un serveur précis (ex : "recipes"), ou null.
+export function getMcpClientByName(name) {
+  return entries.find((e) => e.name === name)?.client || null;
 }
 
 export async function shutdownMcp() {
-  await Promise.allSettled(clients.map((c) => c.close()));
+  await Promise.allSettled(entries.map((e) => e.client.close()));
 }

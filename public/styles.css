@@ -38,8 +38,9 @@ html { scroll-behavior: smooth; }
 body {
   font-family: var(--sans);
   color: var(--ink);
+  /* Fond gris clair "Nardo" */
   background:
-    radial-gradient(140% 90% at 50% -20%, #fbf7ef 0%, var(--paper) 50%, var(--paper-2) 100%) fixed;
+    radial-gradient(140% 90% at 50% -20%, #e4e5e7 0%, #d6d8da 55%, #c9cbce 100%) fixed;
   min-height: 100vh;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -171,7 +172,7 @@ body {
   border-radius: var(--r);
   box-shadow: var(--sh-3);
   max-width: 680px;
-  margin: 0 auto;
+  margin: clamp(2.2rem, 6vw, 4rem) auto 0; /* espace sous la photo du hero */
   padding: 1.4rem;
 }
 
