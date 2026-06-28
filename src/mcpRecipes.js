@@ -94,7 +94,7 @@ export async function recipesFromMcp(query, { allowRandom = false } = {}) {
   if (recettes.length < 3 && allowRandom) {
     for (let i = 0; i < 6 && recettes.length < 3; i++) {
       try {
-        const r = await client.callTool({ name: 'recipe_random', arguments: {} });
+        const r = await client.callTool({ name: 'recipe_random', arguments: { source: 'themealdb' } });
         const rec = parseRecipe(txt(r));
         if (rec.titre && rec.etapes.length) recettes.push(rec);
       } catch { /* ignore */ }
