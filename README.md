@@ -1,89 +1,54 @@
 # 🍽️ Le Chef Jason
 
-Assistant culinaire gastronomique, dans l'esprit du **Guide Michelin**. À chaque
-demande, le Chef propose **trois recettes** raffinées — avec, pour chacune, son
-**style de cuisine**, ses ingrédients, ses étapes, le geste technique signature et
-un accord mets/vin.
+Assistant culinaire gastronomique — **Vite + React + TypeScript + Tailwind CSS**.
 
-> 🆓 **100 % gratuit** : propulsé par **Google Gemini** (palier gratuit), pas l'API Claude.
+- 🆓 **Recettes gratuites, sans quota** via l'API publique **TheMealDB** (appel direct depuis le navigateur).
+- ✨ **Secours Gemini 3** quand TheMealDB ne suffit pas, et pour l'**analyse des photos** (frigo / congélateur / placards — multi-photos, sans limite).
+- ⭐ 3 recettes par demande, avec style de cuisine, ingrédients, étapes et photo du plat.
+- 🎨 Design éditorial (hero photo, fond gris « Nardo », chips tactiles).
 
-## Fonctions
+## Règle de fonctionnement
 
-- 🔎 **Recherche de sites de qualité** (Michelin, Great British Chefs, Taste of France) via la recherche web de Google (grounding).
-- 📖 **Recherche de recettes** par envie, et enrichissement optionnel via serveurs **MCP** (recettes, garde-manger, cookbook).
-- 📷 **Photo du frigo** → le Chef identifie vos ingrédients et propose des recettes adaptées (vision).
-- 🎛️ **Questions** : nombre de personnes, budget, difficulté, style.
-- ⭐ **Style de cuisine** indiqué après chaque recette.
-- 3️⃣ **Trois recettes** recommandées à chaque demande.
+1. **TheMealDB d'abord** (gratuit). Si ≥ 3 recettes → on les affiche.
+2. Sinon → **Gemini 3** (recherche web + génération).
+3. Si Gemini est bloqué (quota) → repli aléatoire TheMealDB.
+4. Le mode **photos** passe directement par Gemini (vision).
 
-## Architecture
-
-```
-Navigateur (HTML/CSS/JS pur, design Michelin)
-        │  fetch JSON
-        ▼
-Serveur Node léger (server.js)  ── cache la clé API, orchestre
-        ├── src/gemini.js   → Google Gemini : vision + recherche web + sortie structurée
-        ├── src/mcp.js      → serveurs MCP (optionnels, dégradation gracieuse)
-        └── src/prompts.js  → persona du Chef + briefs
-```
-
-> Pourquoi un petit serveur ? Une page HTML pure ne peut pas cacher la clé API ni
-> parler aux serveurs MCP. Le serveur reste minimal : il sert les fichiers et relaie
-> les appels. Le frontend, lui, est du HTML/CSS/JS pur, sans build.
-
-## Installation
-
-1. **Installer [Node.js](https://nodejs.org)** (version 20 LTS ou plus).
-2. Dans ce dossier :
-   ```bash
-   npm install
-   ```
-3. Configurer la clé API **gratuite** :
-   ```bash
-   cp .env.example .env       # puis éditer .env et coller votre clé GEMINI_API_KEY
-   ```
-   Clé gratuite à créer sur **https://aistudio.google.com/apikey** (compte Google requis, gratuit).
-4. Lancer :
-   ```bash
-   npm start
-   ```
-5. Ouvrir **http://localhost:3000**
-
-## Coût et limites
-
-- **Gratuit** : le palier gratuit de Gemini couvre largement un usage personnel.
-- Il existe des **limites de débit** (quelques requêtes par minute) ; en cas de dépassement, patienter quelques instants.
-- Modèle par défaut : `gemini-2.5-flash` (rapide, multilingue, avec vision).
-
-## Serveurs MCP (optionnel)
-
-Pour enrichir les recettes avec de vraies bases de données :
+## Démarrer en local
 
 ```bash
-cp mcp.config.example.json mcp.config.json
+npm install
+cp .env.example .env     # puis colle ta clé Gemini dans VITE_GEMINI_API_KEY
+npm run dev              # http://localhost:5173
 ```
 
-Puis passer `"enabled": true` sur les serveurs voulus (`recipes`, `pantrist`,
-`koriander`). Sans ce fichier, la source MCP est marquée « Indisponible » et le Chef
-s'appuie sur la recherche web.
+Build de production : `npm run build` (sortie dans `dist/`).
 
-> ℹ️ **Comparaison des deux sources.** À chaque demande, le Chef lance DEUX
-> recherches en parallèle — recherche web (Gemini) et bases MCP — puis présente
-> les recettes de chaque source **côte à côte**, avec une **analyse comparative**
-> et une **recommandation**. (Gemini ne pouvant combiner web + MCP dans un seul
-> appel, ce sont deux passes distinctes suivies d'une synthèse.)
+## Variables d'environnement
 
-## Personnalisation rapide
+| Variable | Rôle |
+|---|---|
+| `VITE_GEMINI_API_KEY` | Clé Gemini (https://aistudio.google.com/apikey). ⚠️ Exposée au navigateur (préfixe `VITE_`). |
+| `VITE_CHEF_MODEL` | Modèle Gemini (défaut `gemini-3-flash-preview`). |
 
-| Quoi | Où |
-|------|-----|
-| Personnalité / ton du Chef | `src/prompts.js` → `SYSTEM_PROMPT` |
-| Champs des recettes (schéma) | `src/gemini.js` → `RECIPES_SCHEMA` |
-| Design (couleurs, polices) | `public/styles.css` → variables `:root` |
-| Modèle Gemini | `.env` → `CHEF_MODEL` |
+## Importer dans Lovable
 
-## Notes techniques
+1. Pousse ce dépôt sur GitHub.
+2. Dans Lovable : **New → Import from GitHub** → choisis `chef-jason`.
+3. Ajoute la variable d'environnement **`VITE_GEMINI_API_KEY`** dans Lovable.
+4. Lovable détecte Vite + React + Tailwind et lance l'app.
 
-- Les recettes sont renvoyées en **JSON structuré** (schéma garanti), puis rendues en cartes.
-- La photo du frigo est envoyée en base64 au serveur, jamais stockée.
+## Structure
+
+```
+index.html              point d'entrée Vite
+src/
+  main.tsx, App.tsx
+  components/            Hero, Composer, ChipGroup, PhotoUpload, RecipeCard, Results, Loader, Footer
+  lib/
+    themealdb.ts         API TheMealDB (gratuit) + mapping
+    gemini.ts            Appel Gemini 3 (navigateur, REST)
+    recipes.ts           Orchestrateur (TheMealDB d'abord → Gemini)
+  types.ts
+public/                  hero.jpg, chef.jpg
+```
