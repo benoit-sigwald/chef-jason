@@ -1,0 +1,17 @@
+# Configuration de déploiement Render — "Blueprint".
+# Render détecte ce fichier et crée le service web automatiquement.
+services:
+  - type: web
+    name: le-chef-jason
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      # La clé est saisie dans le tableau de bord Render (jamais dans le code).
+      - key: GEMINI_API_KEY
+        sync: false
+      # Version de Node stable et disponible sur Render.
+      - key: NODE_VERSION
+        value: "22"
