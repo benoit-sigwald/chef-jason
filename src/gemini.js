@@ -1,41 +1,50 @@
-// Orchestration Google Gemini — MODE ÉCONOME (1 seul appel par recherche).
+// Orchestration Google Gemini — MODE ÉCONOME (1 seul appel) + Gemini 3.
 //
-// Un unique appel fait tout : analyse de la photo (vision), recherche web
-// (sites de qualité type Michelin) et génération des 3 recettes en JSON.
-// Gemini n'autorisant pas « recherche web + sortie structurée » simultanément,
-// on demande le JSON dans le prompt et on le parse (extraction robuste).
+// Un unique appel fait tout : vision (photo du frigo), recherche web (sites de
+// qualité type Michelin) et génération des 3 recettes en JSON.
+// Optimisations tokens/appels : 1 seul appel, prompts compacts, sortie plafonnée.
+// Reprise automatique sur erreurs transitoires (503/429).
 
 import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT } from './prompts.js';
 
-const MODEL = process.env.CHEF_MODEL || 'gemini-2.5-flash';
+const MODEL = process.env.CHEF_MODEL || 'gemini-3-flash-preview';
+const MAX_OUTPUT_TOKENS = 8192;
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const JSON_INSTRUCTION = `
-Réponds UNIQUEMENT avec un objet JSON valide — aucun texte avant/après, aucune balise markdown.
-Format EXACT :
-{
-  "introduction": "phrase d'accroche chaleureuse du Chef",
-  "ingredientsDetectes": ["ingrédient1", "ingrédient2"],
-  "recettes": [
-    {
-      "titre": "Nom de la recette",
-      "styleCuisine": "ex : Bistronomie française",
-      "accroche": "storytelling court (1-2 phrases)",
-      "pourPersonnes": 2,
-      "difficulte": "Facile | Intermédiaire | Difficile | Chef étoilé",
-      "tempsTotalMinutes": 30,
-      "prixEstime": "~18 €",
-      "ingredients": [{ "nom": "...", "quantite": "..." }],
-      "etapes": ["étape 1", "étape 2"],
-      "astuceChef": "le geste technique signature",
-      "accordMets": "suggestion de vin ou boisson",
-      "sourceInspiration": "site ou chef (URL si trouvée via la recherche web)"
+Réponds UNIQUEMENT par un objet JSON valide (aucun texte ni balise markdown autour). Forme :
+{"introduction":"phrase d'accroche","ingredientsDetectes":["..."],"recettes":[{"titre":"","styleCuisine":"","accroche":"","pourPersonnes":2,"difficulte":"Facile|Intermédiaire|Difficile|Chef étoilé","tempsTotalMinutes":30,"prixEstime":"~18 €","ingredients":[{"nom":"","quantite":""}],"etapes":["",""],"astuceChef":"","accordMets":"","sourceInspiration":""}]}
+EXACTEMENT 3 recettes ; style de cuisine pour chacune ; "ingredientsDetectes" rempli seulement si une photo est fournie.`;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Appel Gemini avec reprise sur 503 (indispo) et 429 (quota momentané).
+async function generate(parts) {
+  const req = {
+    model: MODEL,
+    contents: [{ role: 'user', parts }],
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      tools: [{ googleSearch: {} }],
+      maxOutputTokens: MAX_OUTPUT_TOKENS
     }
-  ]
+  };
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await ai.models.generateContent(req);
+    } catch (err) {
+      lastErr = err;
+      if ((err.status === 503 || err.status === 429) && i < 2) {
+        await sleep(1200 * (i + 1));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
-Règles : EXACTEMENT 3 recettes ; indique le style de cuisine de chacune ;
-"ingredientsDetectes" rempli seulement si une photo est fournie (sinon []).`;
 
 export async function generateRecipes({ brief, imageBase64, mediaType }, _log = console) {
   const parts = [];
@@ -44,15 +53,7 @@ export async function generateRecipes({ brief, imageBase64, mediaType }, _log = 
   }
   parts.push({ text: `${brief}\n\n${JSON_INSTRUCTION}` });
 
-  const res = await ai.models.generateContent({
-    model: MODEL,
-    contents: [{ role: 'user', parts }],
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      tools: [{ googleSearch: {} }]
-    }
-  });
-
+  const res = await generate(parts);
   const result = safeParse(res.text);
   if (Array.isArray(result.recettes)) result.recettes = result.recettes.slice(0, 3);
   if (!Array.isArray(result.ingredientsDetectes)) result.ingredientsDetectes = [];
