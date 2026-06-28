@@ -60,7 +60,13 @@ function handleError(res, err) {
   if (err.code === 'refusal') {
     return res.status(422).json({ error: 'Le Chef ne peut pas répondre à cette demande.' });
   }
-  res.status(500).json({ error: err.message || 'Erreur interne du Chef Jason.' });
+  // Quota Gemini gratuit dépassé : message clair plutôt que le JSON brut de l'API.
+  if (err.status === 429 || /quota|RESOURCE_EXHAUSTED|exceeded/i.test(err.message || '')) {
+    return res.status(429).json({
+      error: 'Quota Gemini gratuit atteint pour le moment. Réessayez dans quelques minutes (le quota se réinitialise chaque jour). Astuce : une clé API standard offre davantage de requêtes.'
+    });
+  }
+  res.status(500).json({ error: 'Le Chef a rencontré un imprévu. Réessayez dans un instant.' });
 }
 
 const { serverCount } = await initMcp(console);

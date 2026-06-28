@@ -5,7 +5,7 @@
       "description": "recipe-mcp — base universelle de recettes (multi-sources, adaptation diététique, garde-manger).",
       "command": "node",
       "args": ["node_modules/recipe-mcp/src/mcp/server.js"],
-      "enabled": true
+      "enabled": false
     }
   ]
 }
