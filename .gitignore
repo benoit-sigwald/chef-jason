@@ -8,3 +8,9 @@ dist-ssr
 .vite
 .tmp.driveupload/
 .tmp.drivedownload/
+
+# Fichiers parasites (synchro Drive/OneDrive, captures d'écran)
+Capture*.png
+Capture*.jpg
+*.tmp
+~$*
