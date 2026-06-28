@@ -1,0 +1,21 @@
+{
+  "name": "le-chef-jason",
+  "version": "1.0.0",
+  "description": "Le Chef Jason — assistant culinaire gastronomique (Google Gemini gratuit + MCP). Recettes inspirées des sites étoilés, idées à partir d'une photo du frigo.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google/genai": "^1.9.0",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "recipe-mcp": "^1.1.2"
+  }
+}
