@@ -3,8 +3,7 @@ export default function Hero() {
     <header
       className="relative bg-ink bg-cover text-center text-paper"
       style={{
-        backgroundImage:
-          "linear-gradient(180deg, rgba(18,13,8,0.42) 0%, rgba(18,13,8,0.80) 100%), url('/hero.jpg')",
+        backgroundImage: `linear-gradient(180deg, rgba(18,13,8,0.42) 0%, rgba(18,13,8,0.80) 100%), url('${import.meta.env.BASE_URL}hero.jpg')`,
         backgroundPosition: 'center 35%',
       }}
     >

@@ -2,7 +2,7 @@ export default function Footer() {
   return (
     <footer className="mt-12 grid justify-items-center gap-3 border-t border-black/10 px-6 py-12 text-center">
       <img
-        src="/chef.jpg"
+        src={`${import.meta.env.BASE_URL}chef.jpg`}
         alt="Le Chef Jason"
         className="h-20 w-20 rounded-full border-2 border-gold object-cover shadow-soft"
       />
