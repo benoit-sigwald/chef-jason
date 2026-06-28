@@ -1,0 +1,18 @@
+# Déploiement Render — SITE STATIQUE (app Vite/React, plus de serveur Express).
+services:
+  - type: web
+    name: le-chef-jason
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    # La clé est inlinée au BUILD (Vite) — à saisir dans le dashboard Render.
+    envVars:
+      - key: VITE_GEMINI_API_KEY
+        sync: false
+      - key: VITE_CHEF_MODEL
+        value: gemini-3-flash-preview
+    # SPA : toute route renvoie index.html.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
