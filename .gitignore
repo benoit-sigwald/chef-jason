@@ -1,15 +1,12 @@
-node_modules
-dist
-dist-ssr
+node_modules/
 .env
-*.local
 *.log
 .DS_Store
-.vite
+
+# Build / parasites
+dist/
 .tmp.driveupload/
 .tmp.drivedownload/
-
-# Fichiers parasites (synchro Drive/OneDrive, captures d'écran)
 Capture*.png
 Capture*.jpg
 *.tmp
