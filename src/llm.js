@@ -1,85 +1,108 @@
 // Génération des recettes — RÈGLE : LLM D'ABORD, puis MCP en secours.
 //
-// LLM = OpenRouter (modèles OPEN-SOURCE gratuits, ex. Llama). Le LLM comprend
-// vraiment la demande (français) → corrige le « tape à côté ». S'il échoue
-// (pas de clé, quota, erreur), on bascule sur MCP/TheMealDB (recettes réelles).
-// La/les photo(s) du frigo passent par un modèle vision open-source.
+// LLM = OpenRouter (modèles OPEN-SOURCE gratuits). On essaie PLUSIEURS modèles
+// dans l'ordre (les modèles :free sont souvent rate-limités) jusqu'à obtenir une
+// réponse JSON exploitable. Si tout échoue -> MCP/TheMealDB (recettes réelles).
+// La/les photo(s) du frigo passent par un modèle vision open-source (Gemma 4…).
 
 import { SYSTEM_PROMPT } from './prompts.js';
 import { recipesFromMcp } from './mcpRecipes.js';
 
 const KEY = process.env.OPENROUTER_API_KEY;
-const TEXT_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
-const VISION_MODEL = process.env.OPENROUTER_VISION_MODEL || 'meta-llama/llama-3.2-11b-vision-instruct:free';
+
+// Modèles texte (du meilleur au plus léger) — on prend le 1er qui répond.
+const TEXT_MODELS = [
+  process.env.OPENROUTER_MODEL,
+  'qwen/qwen3-next-80b-a3b-instruct:free',
+  'google/gemma-4-31b-it:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
+].filter(Boolean);
+
+// Modèles vision (multimodaux) pour les photos du frigo.
+const VISION_MODELS = [
+  process.env.OPENROUTER_VISION_MODEL,
+  'google/gemma-4-31b-it:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-nano-12b-v2-vl:free',
+].filter(Boolean);
 
 const JSON_INSTRUCTION = `
 Réponds UNIQUEMENT par un objet JSON valide (aucun texte ni balise markdown autour). Forme EXACTE :
 {"introduction":"phrase d'accroche du Chef","ingredientsDetectes":["..."],"recettes":[{"titre":"","styleCuisine":"","accroche":"","pourPersonnes":2,"difficulte":"Facile|Intermédiaire|Difficile|Chef étoilé","tempsTotalMinutes":30,"prixEstime":"~18 €","ingredients":[{"nom":"","quantite":""}],"etapes":["",""],"astuceChef":"","accordMets":"","sourceInspiration":""}]}
-EXACTEMENT 3 recettes ; réponds en FRANÇAIS ; respecte précisément la demande ; "ingredientsDetectes" rempli seulement si des photos sont fournies.`;
+EXACTEMENT 3 recettes ; réponds en FRANÇAIS ; respecte PRÉCISÉMENT la demande ; "ingredientsDetectes" rempli seulement si des photos sont fournies.`;
 
-// Appel OpenRouter (API compatible OpenAI).
-async function openrouter(messages, model) {
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://le-chef-jason.onrender.com',
-      'X-Title': 'Le Chef Jason',
-    },
-    body: JSON.stringify({ model, messages, max_tokens: 4000, temperature: 0.7 }),
-  });
-  if (!res.ok) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Un appel sur un modèle, avec 1 reprise sur 429.
+async function callModel(messages, model) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://le-chef-jason.onrender.com',
+        'X-Title': 'Le Chef Jason',
+      },
+      body: JSON.stringify({ model, messages, max_tokens: 4000, temperature: 0.7 }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || '';
+    }
+    if (res.status === 429 && attempt === 0) { await sleep(900); continue; }
     const t = await res.text();
-    const err = new Error(`OpenRouter ${res.status}: ${t.slice(0, 180)}`);
-    err.status = res.status;
-    throw err;
+    throw new Error(`${model} -> ${res.status}: ${t.slice(0, 100)}`);
   }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+  throw new Error(`${model} rate-limited`);
 }
 
-async function llmGenerate({ brief, images }) {
+async function llmGenerate({ brief, images }, log = console) {
   if (!KEY) throw new Error('OPENROUTER_API_KEY manquante');
+  const hadImages = Boolean(images && images.length);
   const system = { role: 'system', content: `${SYSTEM_PROMPT}\n${JSON_INSTRUCTION}` };
+  const content = hadImages
+    ? [{ type: 'text', text: brief }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))]
+    : brief;
+  const messages = [system, { role: 'user', content }];
+  const models = hadImages ? VISION_MODELS : TEXT_MODELS;
 
-  let content, model;
-  if (images && images.length) {
-    // Vision : texte + toutes les photos (dataURL base64 acceptées telles quelles).
-    content = [
-      { type: 'text', text: brief },
-      ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
-    ];
-    model = VISION_MODEL;
-  } else {
-    content = brief;
-    model = TEXT_MODEL;
+  let lastErr;
+  for (const model of models) {
+    try {
+      const out = await callModel(messages, model);
+      const result = finalize(safeParse(out), hadImages);
+      if (result.recettes.length) {
+        log.info?.(`[LLM] ${model} ✓`);
+        return result;
+      }
+    } catch (e) {
+      lastErr = e;
+      log.warn?.(`[LLM] ${e.message} — modèle suivant`);
+    }
   }
-
-  const text = await openrouter([system, { role: 'user', content }], model);
-  return finalize(safeParse(text), Boolean(images && images.length));
+  throw lastErr || new Error('Aucun modèle LLM exploitable');
 }
 
 function finalize(result, hadImages) {
-  if (Array.isArray(result.recettes)) result.recettes = result.recettes.slice(0, 3);
-  else result.recettes = [];
-  if (!Array.isArray(result.ingredientsDetectes)) result.ingredientsDetectes = [];
-  if (!hadImages) result.ingredientsDetectes = result.ingredientsDetectes || [];
+  if (!result || typeof result !== 'object') return { recettes: [], ingredientsDetectes: [] };
+  result.recettes = Array.isArray(result.recettes) ? result.recettes.slice(0, 3) : [];
+  result.ingredientsDetectes = Array.isArray(result.ingredientsDetectes) ? result.ingredientsDetectes : [];
+  if (!hadImages) result.ingredientsDetectes = result.ingredientsDetectes;
   return result;
 }
 
 // Point d'entrée : LLM d'abord, MCP ensuite.
 export async function generateRecipes({ brief, query, images = [] }, log = console) {
-  // 1) LLM open-source
   try {
-    const r = await llmGenerate({ brief, images });
+    const r = await llmGenerate({ brief, images }, log);
     if (r.recettes.length) return r;
-    log.warn?.('[LLM] réponse vide — bascule MCP.');
   } catch (e) {
     log.warn?.(`[LLM] indisponible (${e.message}) — bascule MCP.`);
   }
 
-  // 2) MCP / TheMealDB (secours, gratuit, sans quota)
   try {
     const mcp = await recipesFromMcp(query || '', { allowRandom: true });
     if (mcp.recettes.length) return mcp;
