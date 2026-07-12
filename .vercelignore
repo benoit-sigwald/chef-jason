@@ -1,0 +1,6 @@
+# Jamais dans le bundle de déploiement : la clé passe par les
+# variables d'environnement du projet Vercel (dashboard ou `vercel env add`).
+.env
+mcp.config.json
+dist
+node_modules
