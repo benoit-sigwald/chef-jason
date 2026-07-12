@@ -14,7 +14,6 @@ const KEY = process.env.OPENROUTER_API_KEY;
 const TEXT_MODELS = [
   process.env.OPENROUTER_MODEL,
   'qwen/qwen3-next-80b-a3b-instruct:free',
-  'google/gemma-4-31b-it:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'google/gemma-4-26b-a4b-it:free',
   'meta-llama/llama-3.2-3b-instruct:free',
@@ -23,7 +22,6 @@ const TEXT_MODELS = [
 // Modèles vision (multimodaux) pour les photos du frigo.
 const VISION_MODELS = [
   process.env.OPENROUTER_VISION_MODEL,
-  'google/gemma-4-31b-it:free',
   'google/gemma-4-26b-a4b-it:free',
   'nvidia/nemotron-nano-12b-v2-vl:free',
 ].filter(Boolean);
@@ -47,6 +45,7 @@ async function callModel(messages, model) {
         'X-Title': 'Le Chef Jason',
       },
       body: JSON.stringify({ model, messages, max_tokens: 4000, temperature: 0.7 }),
+      signal: AbortSignal.timeout(45_000), // un modèle qui pend ne bloque pas la requête : on passe au suivant
     });
     if (res.ok) {
       const data = await res.json();
@@ -90,7 +89,7 @@ function finalize(result, hadImages) {
   if (!result || typeof result !== 'object') return { recettes: [], ingredientsDetectes: [] };
   result.recettes = Array.isArray(result.recettes) ? result.recettes.slice(0, 3) : [];
   result.ingredientsDetectes = Array.isArray(result.ingredientsDetectes) ? result.ingredientsDetectes : [];
-  if (!hadImages) result.ingredientsDetectes = result.ingredientsDetectes;
+  if (!hadImages) result.ingredientsDetectes = []; // sans photo, rien à « détecter »
   return result;
 }
 

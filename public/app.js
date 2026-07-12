@@ -59,13 +59,43 @@ $$('.suggestion').forEach((s) => {
 });
 
 /* ---------- Photos (multiples) : sélection + glisser-déposer ---------- */
+// Compression côté client : 1024 px max, JPEG. Une photo de téléphone passe de
+// ~8 Mo à ~150 Ko en base64 → beaucoup moins de tokens vision, et on reste sous
+// la limite de 4,5 Mo par requête des fonctions serverless (Vercel).
+const MAX_PHOTO_DIM = 1024;
+const JPEG_QUALITY = 0.8;
+
+async function compressImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_PHOTO_DIM / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+}
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function handleFiles(files) {
   if (!files) return;
-  [...files].forEach((file) => {
+  [...files].forEach(async (file) => {
     if (!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => { photoDataUrls.push(reader.result); renderPreviews(); updateFrigoState(); };
-    reader.readAsDataURL(file);
+    try {
+      photoDataUrls.push(await compressImage(file));
+    } catch {
+      // Repli : original en base64 (format exotique ou navigateur ancien).
+      try { photoDataUrls.push(await readAsDataUrl(file)); } catch { return; }
+    }
+    renderPreviews(); updateFrigoState();
   });
 }
 

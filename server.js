@@ -18,7 +18,9 @@ if (!process.env.OPENROUTER_API_KEY) {
 }
 
 const app = express();
-app.use(express.json({ limit: '25mb' })); // marge pour plusieurs photos en base64
+// Les photos sont compressées côté client (~150 Ko/photo) ; 4 Mo suffit et
+// reste sous la limite de 4,5 Mo des fonctions serverless Vercel.
+app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -62,15 +64,23 @@ function handleError(res, err) {
   res.status(500).json({ error: err.message || 'Le Chef a rencontré un imprévu. Réessayez.' });
 }
 
-const { serverCount } = await initMcp(console);
-app.listen(PORT, () => {
-  console.log(`\n🍽️  Le Chef Jason est en cuisine : http://localhost:${PORT}`);
-  console.log(`    LLM : ${process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free'} | Serveurs MCP : ${serverCount}\n`);
-});
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, async () => {
-    await shutdownMcp();
-    process.exit(0);
+// Sur Vercel (serverless) : pas de listen ni de sous-processus MCP (cold start) —
+// l'app est exportée et la bascule MCP se dégrade gracieusement (LLM seul).
+if (process.env.VERCEL) {
+  console.log('[Vercel] Mode serverless : MCP désactivé, LLM OpenRouter seul.');
+} else {
+  const { serverCount } = await initMcp(console);
+  app.listen(PORT, () => {
+    console.log(`\n🍽️  Le Chef Jason est en cuisine : http://localhost:${PORT}`);
+    console.log(`    LLM : ${process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free'} | Serveurs MCP : ${serverCount}\n`);
   });
+
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, async () => {
+      await shutdownMcp();
+      process.exit(0);
+    });
+  }
 }
+
+export default app;
