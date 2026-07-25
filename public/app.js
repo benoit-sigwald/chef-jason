@@ -149,11 +149,11 @@ function gather(form) {
 }
 
 /* ---------- Soumissions ---------- */
-formCriteres.addEventListener('submit', (e) => { e.preventDefault(); request('/api/recipes', gather(formCriteres)); });
+formCriteres.addEventListener('submit', (e) => { e.preventDefault(); request('api/recipes', gather(formCriteres)); });
 formFrigo.addEventListener('submit', (e) => {
   e.preventDefault();
   if (photoDataUrls.length === 0) return;
-  request('/api/fridge', { ...gather(formFrigo), images: photoDataUrls });
+  request('api/fridge', { ...gather(formFrigo), images: photoDataUrls });
 });
 
 /* ---------- Appel serveur ---------- */
