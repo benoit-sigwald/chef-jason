@@ -11,3 +11,5 @@ Capture*.png
 Capture*.jpg
 *.tmp
 ~$*
+
+.vercel
